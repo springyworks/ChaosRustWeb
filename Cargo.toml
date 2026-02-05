@@ -1,22 +1,25 @@
 [package]
 name = "chaos_rust_web"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-bevy = { version = "0.14", default-features = false, features = [
-    "bevy_winit",
-    "bevy_core_pipeline",
-    "bevy_pbr",
-    "bevy_render",
+bevy = { path = "../../bevy", features = [
     "webgl2",
 ] }
+# x11 needed for local check, usually ignored on wasm, but let's stick to minimal
+# wait, webgl2 is crucial. And default-features=false removes default_platform (which has webgl2).
+
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
 console_error_panic_hook = "0.1"
 getrandom = { version = "0.2", features = ["js"] }
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 uuid = { version = "1.0", features = ["v4", "js"] }
+burn = { version = "0.20.1", features = ["wgpu", "autodiff"] }
+burn-ndarray = "0.20.1"
+burn-autodiff = "0.20.1"
+# burn-wgpu = "0.20.1" (included via burn features)
 
 [profile.release]
 opt-level = "s"

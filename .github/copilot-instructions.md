@@ -10,20 +10,19 @@
 - [x] Customize the Project
     <!-- Ported logic from wed04-1730.rs -->
 
-- [ ] Install Required Extensions
+- [x] Install Required Extensions
     <!-- None explicit, Bevy handles most -->
 
-- [ ] Compile the Project
-    <!-- Will verify with cargo check -->
+- [x] Compile the Project
+    <!-- Verified with cargo build and trunk build -->
 
-- [ ] Launch the Project
-    <!-- Provide instructions -->
+- [x] Launch the Project
+    <!-- Launched trunk serve --open -->
 
--[ ] Ask user for feedback, after they have run the project, to ensure it meets their expectations.
+- [ ] Ask user for feedback, after they have run the project, to ensure it meets their expectations.
     <!-- Prompt for feedback -->
- [ ] Ensure Documentation is Complete
-
-    <!-- Verify README.md -->
+- [x] Ensure Documentation is Complete
+    <!-- Verified README.md -->
 
 <!--
 ## Execution Guidelines
