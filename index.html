@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>Bevy Web Test</title>
+    <!-- Trunk directives -->
+    <link data-trunk rel="copy-dir" href="assets"/>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body { 
+            width: 100%;
+            height: 100%;
+            margin: 0; 
+            padding: 0;
+            background-color: #0a0a14; 
+            overflow: hidden; 
+            touch-action: none;
+        }
+        #bevy { 
+            width: 100%;
+            height: 100%;
+            display: block;
+            background-color: #1a1a2e;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="bevy" oncontextmenu="return false;"></canvas>
+    
+    <script>
+        // Prevent default context menu
+        document.addEventListener('contextmenu', event => event.preventDefault());
+    </script>
+</body>
+</html>
