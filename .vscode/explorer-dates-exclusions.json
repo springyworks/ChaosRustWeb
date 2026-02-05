@@ -1,11 +1,14 @@
 {
-  "version": 1,
-  "updatedAt": "2026-02-05T10:41:19.908Z",
   "exclusions": [
     ".git",
     "target",
     "build",
     "deps",
-    ".vscode"
-  ]
+    ".vscode",
+    "logs",
+    "dist",
+    "debug"
+  ],
+  "updatedAt": "2026-02-05T11:45:10.011Z",
+  "version": 1
 }

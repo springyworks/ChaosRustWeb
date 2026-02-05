@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <title>ChaosRust Web: 3D Ripple Tank</title>
+    <title>Bevy Web Test</title>
     <!-- Trunk directives -->
     
     
@@ -28,7 +28,7 @@
             background-color: #1a1a2e;
         }
     </style>
-<link rel="modulepreload" href="/chaos_rust_web-d974f6e0f8bdf7dd.js" crossorigin="anonymous" integrity="sha384-XR+fA5AdWaaAxcrCxoeYsvysq0JCbDoTLnAWgb0HEYSi3rbU3MLmsBpulJdpxjI+"><link rel="preload" href="/chaos_rust_web-d974f6e0f8bdf7dd_bg.wasm" crossorigin="anonymous" integrity="sha384-LeqjYSSs8y45xPFx6t+LFLSg68fVjT10k1wxX4RR/kYY+yRJQ/OJziKtsUQdldhS" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/chaos_rust_web-519109a5cea32a1b.js" crossorigin="anonymous" integrity="sha384-aNC5CO6ds+g5SB9wBBWuCzEetPQPB/RK6izh+7t1nfQfj6Un/LSbkXcyfU9OJ/2i"><link rel="preload" href="/chaos_rust_web-519109a5cea32a1b_bg.wasm" crossorigin="anonymous" integrity="sha384-fmdBkmxMa/qMewHBjEwf4UQodpE0SJEpUGdHRmabhplRw57fhPumHc9SoTHxuqLe" as="fetch" type="application/wasm"></head>
 <body>
     <canvas id="bevy" oncontextmenu="return false;"></canvas>
     
@@ -38,8 +38,8 @@
     </script>
 
 <script type="module">
-import init, * as bindings from '/chaos_rust_web-d974f6e0f8bdf7dd.js';
-const wasm = await init({ module_or_path: '/chaos_rust_web-d974f6e0f8bdf7dd_bg.wasm' });
+import init, * as bindings from '/chaos_rust_web-519109a5cea32a1b.js';
+const wasm = await init({ module_or_path: '/chaos_rust_web-519109a5cea32a1b_bg.wasm' });
 
 
 window.wasmBindings = bindings;

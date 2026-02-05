@@ -1,1 +1,4 @@
 /target
+/dist/*.js
+/dist/*.wasm
+!/dist/index.html
