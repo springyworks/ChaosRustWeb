@@ -2,9 +2,7 @@
 
 A real-time 4D wave equation simulation running in the browser via WebAssembly, powered by Bevy 0.15 and Burn 0.20.
 
-## Live Demo
 
-[View Live Demo on GitHub Pages](https://yourusername.github.io/ChaosRustWeb/)
 
 ## What This Demonstrates
 
