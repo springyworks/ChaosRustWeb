@@ -1,0 +1,6 @@
+[build]
+# trunk automatically targets wasm32-unknown-unknown
+
+[serve]
+port = 8080
+open = true

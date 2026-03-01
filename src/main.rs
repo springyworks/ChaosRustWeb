@@ -27,10 +27,6 @@
 
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit};
-use burn_ndarray::NdArray;
-
-/// Burn backend type for tensor operations (currently unused but reserved for future ML integration)
-type MyBackend = NdArray<f32>;
 
 /// Application entry point - configures Bevy app and launches the simulation
 fn main() {
@@ -207,7 +203,7 @@ fn setup_scene(
     commands.spawn((
         DirectionalLight {
             illuminance: 15000.0,
-            shadow_maps_enabled: false,
+            shadows_enabled: false,
             ..default()
         },
         Transform::from_xyz(5.0, 10.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -218,7 +214,7 @@ fn setup_scene(
         PointLight {
             intensity: 30000.0,
             range: 1000.0,
-            shadow_maps_enabled: false,
+            shadows_enabled: false,
             ..default()
         },
         Transform::from_xyz(50.0, 50.0, 50.0),
@@ -296,7 +292,7 @@ fn setup_scene(
     commands.spawn((
         Text::new("Initializing..."),
         TextFont {
-            font_size: FontSize::Px(18.0),
+            font_size: 18.0,
             ..default()
         },
         TextColor(Color::WHITE),
@@ -525,8 +521,8 @@ fn camera_controls(
     mut cam_controller: ResMut<CameraController>,
     mut query: Query<&mut Transform, With<MainCamera>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion: MessageReader<MouseMotion>,
-    mut mouse_wheel: MessageReader<MouseWheel>,
+    mut mouse_motion: EventReader<MouseMotion>,
+    mut mouse_wheel: EventReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
@@ -572,11 +568,10 @@ fn camera_controls(
     }
 
     // Update camera transform
-    if let Ok(mut transform) = query.single_mut() {
-        let rot = Quat::from_rotation_y(cam_controller.angle) * Quat::from_rotation_x(cam_controller.pitch);
-        transform.translation = cam_controller.focus + rot * Vec3::new(0.0, 0.0, cam_controller.radius);
-        transform.look_at(cam_controller.focus, Vec3::Y);
-    }
+    let mut transform = query.single_mut();
+    let rot = Quat::from_rotation_y(cam_controller.angle) * Quat::from_rotation_x(cam_controller.pitch);
+    transform.translation = cam_controller.focus + rot * Vec3::new(0.0, 0.0, cam_controller.radius);
+    transform.look_at(cam_controller.focus, Vec3::Y);
 }
 
 /// Updates on-screen statistics display
@@ -592,8 +587,8 @@ fn update_stats_ui(
     time: Res<Time>,
     mut query: Query<&mut Text, With<StatsText>>,
 ) {
-    if let Ok(mut text) = query.single_mut() {
-        let total_e = stats.total_ke + stats.total_pe;
+    let mut text = query.single_mut();
+    let total_e = stats.total_ke + stats.total_pe;
         **text = format!(
             "🌊 4D Ripple Tank (3x12³ grids)\n\
             Steps: {} | FPS: {:.0}\n\
@@ -613,5 +608,4 @@ fn update_stats_ui(
             stats.total_pe,
             stats.max_vel
         );
-    }
 }
