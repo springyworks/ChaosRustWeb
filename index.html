@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>ChaosRustWeb - 4D Ripple Tank</title>
     
     <style>
@@ -29,10 +30,20 @@
 </head>
 <body>
     <canvas id="bevy" oncontextmenu="return false;"></canvas>
+    <div id="loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#6af;font-family:monospace;font-size:1.2em;">Loading WASM...</div>
     
     <script>
         // Prevent default context menu
         document.addEventListener('contextmenu', event => event.preventDefault());
+        // Hide loading indicator once WASM starts rendering
+        const observer = new MutationObserver(() => {
+            const el = document.getElementById('loading');
+            if (el) el.remove();
+            observer.disconnect();
+        });
+        observer.observe(document.getElementById('bevy'), { attributes: true });
+        // Fallback: hide after 15s regardless
+        setTimeout(() => { const el = document.getElementById('loading'); if (el) el.remove(); }, 15000);
     </script>
 </body>
 </html>

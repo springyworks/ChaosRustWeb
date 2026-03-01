@@ -241,7 +241,8 @@ fn setup_scene(
     });
 
     // Create 3D grid mesh (shared by all particles)
-    let grid_mesh = meshes.add(Sphere::new(0.15).mesh().ico(2).unwrap());
+    // ico(1) = 42 verts per sphere — light enough for mobile GPUs
+    let grid_mesh = meshes.add(Sphere::new(0.15).mesh().ico(1).unwrap());
     let dim = 12;
     let spacing = 1.5;
     let offset = (dim as f32 * spacing) / 2.0;
