@@ -28,11 +28,85 @@
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit};
 
+/// Helper macro for logging to browser console on WASM
+#[cfg(target_arch = "wasm32")]
+macro_rules! web_log {
+    ($($arg:tt)*) => {
+        web_sys::console::log_1(&format!($($arg)*).into());
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! web_log {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
+    }
+}
+
+/// Detect if running on a mobile device (via canvas/screen size heuristic)
+#[cfg(target_arch = "wasm32")]
+fn is_mobile() -> bool {
+    let window = web_sys::window().unwrap();
+    let screen = window.screen().unwrap();
+    let w = screen.width().unwrap_or(1920);
+    let h = screen.height().unwrap_or(1080);
+    let min_dim = w.min(h);
+    // Mobile screens are typically < 800px on the smaller dimension
+    // Also check user agent for Android/iPhone
+    let ua = window.navigator().user_agent().unwrap_or_default();
+    let is_touch = ua.contains("Android") || ua.contains("iPhone") || ua.contains("iPad") || ua.contains("Mobile");
+    web_log!("[ChaosRust] Screen: {}x{}, UA mobile: {}, min_dim: {}", w, h, is_touch, min_dim);
+    is_touch || min_dim < 800
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_mobile() -> bool {
+    false
+}
+
 /// Application entry point - configures Bevy app and launches the simulation
 fn main() {
     // Install panic hook for better error messages in browser console
     #[cfg(target_arch = "wasm32")]
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+    web_log!("[ChaosRust] ===== App Starting =====");
+    web_log!("[ChaosRust] Detecting platform...");
+
+    let mobile = is_mobile();
+    let grid_dim = if mobile { 6 } else { 12 };
+    web_log!("[ChaosRust] Mobile: {}, Grid dim: {} ({}³ = {} particles per tensor, {} total)",
+        mobile, grid_dim, grid_dim, grid_dim*grid_dim*grid_dim, grid_dim*grid_dim*grid_dim*3);
+
+    web_log!("[ChaosRust] Configuring Bevy plugins...");
+
+    let mut physics = PhysicsConfig::default();
+    physics.dim = grid_dim;
+    if mobile {
+        // Reduce physics intensity for mobile
+        physics.pinger_strength = 1500.0;
+    }
+
+    // On mobile with high DPR, fit_canvas_to_parent causes surface > GPU max texture (4096).
+    // Instead, compute a safe logical resolution from viewport dimensions such that
+    // logical × DPR < 4096 for both dimensions.
+    #[cfg(target_arch = "wasm32")]
+    let (fit_canvas, resolution) = if mobile {
+        let window = web_sys::window().unwrap();
+        let vw = window.inner_width().unwrap().as_f64().unwrap_or(980.0) as f32;
+        let vh = window.inner_height().unwrap().as_f64().unwrap_or(1811.0) as f32;
+        let dpr = window.device_pixel_ratio() as f32;
+        let max_safe = 4000.0 / dpr; // stay under GPU max 4096
+        let w = vw.min(max_safe);
+        let h = vh.min(max_safe);
+        web_log!("[ChaosRust] Safe resolution: {}x{} (viewport {}x{}, DPR {}, max_safe {})",
+            w, h, vw, vh, dpr, max_safe);
+        (false, bevy::window::WindowResolution::new(w, h))
+    } else {
+        (true, bevy::window::WindowResolution::default())
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let (fit_canvas, resolution) = (true, bevy::window::WindowResolution::default());
 
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.03)))
@@ -40,12 +114,14 @@ fn main() {
             primary_window: Some(Window {
                 title: "ChaosRust Web - 4D Ripple Tank".into(),
                 canvas: Some("#bevy".into()),
-                fit_canvas_to_parent: true,
+                fit_canvas_to_parent: fit_canvas,
+                prevent_default_event_handling: false,
+                resolution,
                 ..default()
             }),
             ..default()
         }))
-        .insert_resource(PhysicsConfig::default())
+        .insert_resource(physics)
         .insert_resource(SimStats::default())
         .insert_resource(CameraController::default())
         .add_systems(Startup, (setup_scene, setup_physics))
@@ -151,7 +227,7 @@ impl Default for CameraController {
         Self {
             angle: 0.0,
             pitch: 0.52, // ~30 degrees
-            radius: 70.0,
+            radius: 45.0, // Closer default for better visibility on mobile
             focus: Vec3::ZERO,
             auto_rotate_speed: 0.2,
             auto_rotate: true,
@@ -191,13 +267,17 @@ fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    config: Res<PhysicsConfig>,
 ) {
+    web_log!("[ChaosRust] setup_scene: Starting scene setup...");
+
     // Spawn main camera with perspective projection
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 30.0, 70.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 20.0, 45.0).looking_at(Vec3::ZERO, Vec3::Y),
         MainCamera,
     ));
+    web_log!("[ChaosRust] setup_scene: Camera spawned");
 
     // Directional light (sun-like, illuminates entire scene)
     commands.spawn((
@@ -222,30 +302,39 @@ fn setup_scene(
 
     // Create materials for the three tensor grids
     // Red (left), Green (center), Blue (right)
+    // High emissive values ensure visibility even with limited WebGL2 lighting
     let mat1 = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.2, 0.2),
-        emissive: LinearRgba::rgb(0.3, 0.0, 0.0),
+        base_color: Color::srgb(1.0, 0.3, 0.3),
+        emissive: LinearRgba::rgb(2.0, 0.2, 0.2),
+        unlit: false,
         ..default()
     });
 
     let mat2 = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.2, 1.0, 0.2),
-        emissive: LinearRgba::rgb(0.0, 0.3, 0.0),
+        base_color: Color::srgb(0.3, 1.0, 0.3),
+        emissive: LinearRgba::rgb(0.2, 2.0, 0.2),
+        unlit: false,
         ..default()
     });
 
     let mat3 = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.2, 0.2, 1.0),
-        emissive: LinearRgba::rgb(0.0, 0.0, 0.3),
+        base_color: Color::srgb(0.3, 0.3, 1.0),
+        emissive: LinearRgba::rgb(0.2, 0.2, 2.0),
+        unlit: false,
         ..default()
     });
 
+    web_log!("[ChaosRust] setup_scene: Lights spawned, creating grid mesh...");
+
     // Create 3D grid mesh (shared by all particles)
     // ico(1) = 42 verts per sphere — light enough for mobile GPUs
-    let grid_mesh = meshes.add(Sphere::new(0.15).mesh().ico(1).unwrap());
-    let dim = 12;
-    let spacing = 1.5;
+    let dim = config.dim;
+    let sphere_detail = if dim <= 6 { 1 } else { 1 }; // ico subdivision level
+    let sphere_radius = if dim <= 6 { 0.4 } else { 0.15 }; // larger spheres for smaller grids
+    let grid_mesh = meshes.add(Sphere::new(sphere_radius).mesh().ico(sphere_detail).unwrap());
+    let spacing = if dim <= 6 { 2.5 } else { 1.5 };
     let offset = (dim as f32 * spacing) / 2.0;
+    web_log!("[ChaosRust] setup_scene: Grid config: dim={}, spacing={}, sphere_r={}", dim, spacing, sphere_radius);
 
     // Spawn three tensor grids in a row
     for tensor_id in 0..3 {
@@ -255,7 +344,8 @@ fn setup_scene(
             _ => (30.0, mat3.clone()),
         };
 
-        // Create 12×12×12 = 1,728 particles per tensor
+        // Create dim³ particles per tensor
+        web_log!("[ChaosRust] setup_scene: Spawning tensor {} ({} particles)...", tensor_id, dim*dim*dim);
         for x in 0..dim {
             for y in 0..dim {
                 for z in 0..dim {
@@ -289,6 +379,8 @@ fn setup_scene(
         }
     }
 
+    web_log!("[ChaosRust] setup_scene: All {} particles spawned!", dim*dim*dim*3);
+
     // UI text overlay showing simulation stats
     commands.spawn((
         Text::new("Initializing..."),
@@ -308,12 +400,12 @@ fn setup_scene(
 }
 
 /// Initializes physics system (currently minimal setup)
-fn setup_physics(mut _config: ResMut<PhysicsConfig>) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        use web_sys::console;
-        console::log_1(&"Physics system initialized for 3x12x12x12 wave grids".into());
-    }
+fn setup_physics(config: Res<PhysicsConfig>) {
+    let dim = config.dim;
+    web_log!("[ChaosRust] Physics system initialized for 3x{}x{}x{} wave grids ({} total particles)",
+        dim, dim, dim, dim*dim*dim*3);
+    web_log!("[ChaosRust] Physics config: dt={}, wave_speed={}, damping={}, inter_coupling={}",
+        config.dt, config.wave_speed, config.damping, config.inter_coupling);
 }
 
 /// Main physics simulation step using wave equation solver
@@ -486,11 +578,7 @@ fn pinger_system(
             }
         }
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            use web_sys::console;
-            console::log_1(&format!("🔔 Ping on tensor {}", target_tensor).into());
-        }
+        web_log!("🔔 Ping on tensor {}", target_tensor);
     }
 }
 

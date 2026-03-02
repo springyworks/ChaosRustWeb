@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <title>Bevy Web Test</title>
-    <!-- Trunk directives -->
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <title>ChaosRustWeb - 4D Ripple Tank</title>
     
     <style>
         * {
@@ -17,7 +16,7 @@
             height: 100%;
             margin: 0; 
             padding: 0;
-            background-color: #0a0a14; 
+            background-color: #050508; 
             overflow: hidden; 
             touch-action: none;
         }
@@ -25,21 +24,56 @@
             width: 100%;
             height: 100%;
             display: block;
-            background-color: #1a1a2e;
+            background-color: #050508;
         }
     </style>
-<link rel="modulepreload" href="/chaos_rust_web-519109a5cea32a1b.js" crossorigin="anonymous" integrity="sha384-aNC5CO6ds+g5SB9wBBWuCzEetPQPB/RK6izh+7t1nfQfj6Un/LSbkXcyfU9OJ/2i"><link rel="preload" href="/chaos_rust_web-519109a5cea32a1b_bg.wasm" crossorigin="anonymous" integrity="sha384-fmdBkmxMa/qMewHBjEwf4UQodpE0SJEpUGdHRmabhplRw57fhPumHc9SoTHxuqLe" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/chaos_rust_web-32c0233e360a8cd8.js" crossorigin="anonymous" integrity="sha384-C5hk/eYhBh6eBVE1zuVJybG6r2+zCHulbD+LqniUglu5W1wemi7TlJfoZmsv0zZP"><link rel="preload" href="/chaos_rust_web-32c0233e360a8cd8_bg.wasm" crossorigin="anonymous" integrity="sha384-4T3dPbRql3PrZ/7zVvn2hvm3hMk0T6ov0ejGN3kLwDq9ZDdiP7o1s7QW0TeIeeNj" as="fetch" type="application/wasm"></head>
 <body>
     <canvas id="bevy" oncontextmenu="return false;"></canvas>
+    <div id="loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#6af;font-family:monospace;font-size:1.2em;">Loading WASM...</div>
     
     <script>
+        // Pre-flight WebGL2 check using a TEMPORARY canvas (not #bevy)
+        (function() {
+            var testCanvas = document.createElement('canvas');
+            testCanvas.width = 1;
+            testCanvas.height = 1;
+            var gl = testCanvas.getContext('webgl2');
+            var loadEl = document.getElementById('loading');
+            if (!gl) {
+                console.error('[ChaosRust] WebGL2 NOT available on this device!');
+                loadEl.innerHTML = 'ERROR: WebGL2 not supported on this device/browser.<br>Try Chrome or a newer browser.';
+                loadEl.style.color = '#f44';
+            } else {
+                var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+                var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+                var vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown';
+                console.log('[ChaosRust] WebGL2 OK - Renderer:', renderer, '- Vendor:', vendor);
+                console.log('[ChaosRust] Max texture size:', gl.getParameter(gl.MAX_TEXTURE_SIZE));
+                console.log('[ChaosRust] Max vertex attribs:', gl.getParameter(gl.MAX_VERTEX_ATTRIBS));
+                // Destroy test context and canvas
+                var ext = gl.getExtension('WEBGL_lose_context');
+                if (ext) ext.loseContext();
+                testCanvas = null;
+            }
+        })();
+
         // Prevent default context menu
         document.addEventListener('contextmenu', event => event.preventDefault());
+        // Hide loading indicator once WASM starts rendering
+        const observer = new MutationObserver(() => {
+            const el = document.getElementById('loading');
+            if (el) el.remove();
+            observer.disconnect();
+        });
+        observer.observe(document.getElementById('bevy'), { attributes: true });
+        // Fallback: hide after 15s regardless
+        setTimeout(() => { const el = document.getElementById('loading'); if (el) el.remove(); }, 15000);
     </script>
 
 <script type="module">
-import init, * as bindings from '/chaos_rust_web-519109a5cea32a1b.js';
-const wasm = await init({ module_or_path: '/chaos_rust_web-519109a5cea32a1b_bg.wasm' });
+import init, * as bindings from '/chaos_rust_web-32c0233e360a8cd8.js';
+const wasm = await init({ module_or_path: '/chaos_rust_web-32c0233e360a8cd8_bg.wasm' });
 
 
 window.wasmBindings = bindings;

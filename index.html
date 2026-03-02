@@ -16,7 +16,7 @@
             height: 100%;
             margin: 0; 
             padding: 0;
-            background-color: #0a0a14; 
+            background-color: #050508; 
             overflow: hidden; 
             touch-action: none;
         }
@@ -24,7 +24,7 @@
             width: 100%;
             height: 100%;
             display: block;
-            background-color: #1a1a2e;
+            background-color: #050508;
         }
     </style>
 </head>
@@ -33,6 +33,31 @@
     <div id="loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#6af;font-family:monospace;font-size:1.2em;">Loading WASM...</div>
     
     <script>
+        // Pre-flight WebGL2 check using a TEMPORARY canvas (not #bevy)
+        (function() {
+            var testCanvas = document.createElement('canvas');
+            testCanvas.width = 1;
+            testCanvas.height = 1;
+            var gl = testCanvas.getContext('webgl2');
+            var loadEl = document.getElementById('loading');
+            if (!gl) {
+                console.error('[ChaosRust] WebGL2 NOT available on this device!');
+                loadEl.innerHTML = 'ERROR: WebGL2 not supported on this device/browser.<br>Try Chrome or a newer browser.';
+                loadEl.style.color = '#f44';
+            } else {
+                var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+                var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+                var vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown';
+                console.log('[ChaosRust] WebGL2 OK - Renderer:', renderer, '- Vendor:', vendor);
+                console.log('[ChaosRust] Max texture size:', gl.getParameter(gl.MAX_TEXTURE_SIZE));
+                console.log('[ChaosRust] Max vertex attribs:', gl.getParameter(gl.MAX_VERTEX_ATTRIBS));
+                // Destroy test context and canvas
+                var ext = gl.getExtension('WEBGL_lose_context');
+                if (ext) ext.loseContext();
+                testCanvas = null;
+            }
+        })();
+
         // Prevent default context menu
         document.addEventListener('contextmenu', event => event.preventDefault());
         // Hide loading indicator once WASM starts rendering
