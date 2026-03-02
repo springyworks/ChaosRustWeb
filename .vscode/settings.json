@@ -1,0 +1,19 @@
+{
+    "workbench.colorCustomizations": {
+        "editor.background": "#010101",
+        "activityBar.background": "#4B220C",
+        "titleBar.activeBackground": "#693011",
+        "titleBar.activeForeground": "#FEFAF7",
+        "explorerDates.customColor.veryRecent": "#00ff00",
+        "explorerDates.customColor.recent": "#ffff00",
+        "explorerDates.customColor.old": "#ff0000",
+        "titleBar.inactiveBackground": "#833B15",
+        "titleBar.inactiveForeground": "#FEFAF8",
+        "statusBar.background": "#833B15",
+        "statusBar.foreground": "#FEFAF8",
+        "statusBar.debuggingBackground": "#833B15",
+        "statusBar.debuggingForeground": "#FEFAF8",
+        "statusBar.noFolderBackground": "#833B15",
+        "statusBar.noFolderForeground": "#FEFAF8"
+    }
+}
