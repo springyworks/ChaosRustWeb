@@ -27,6 +27,7 @@
 
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel, MouseScrollUnit};
+use bevy::input::touch::Touches;
 
 /// Helper macro for logging to browser console on WASM
 #[cfg(target_arch = "wasm32")]
@@ -124,11 +125,19 @@ fn main() {
         .insert_resource(physics)
         .insert_resource(SimStats::default())
         .insert_resource(CameraController::default())
+        .insert_resource(TouchState::default())
+        .insert_resource(SimSpeed::default())
+        .insert_resource(PendingTap::default())
+        .insert_resource(TensorEnergy::default())
         .add_systems(Startup, (setup_scene, setup_physics))
         .add_systems(Update, camera_controls)
+        .add_systems(Update, touch_camera_controls)
+        .add_systems(Update, read_ui_sliders)
         .add_systems(Update, physics_step)
         .add_systems(Update, pinger_system)
         .add_systems(Update, update_visuals)
+        .add_systems(Update, tap_shoot_system)
+        .add_systems(Update, audio_bridge_system)
         .add_systems(Update, update_stats_ui)
         .run();
 }
@@ -242,6 +251,33 @@ struct MainCamera;
 /// Marker component for the stats text UI element
 #[derive(Component)]
 struct StatsText;
+
+/// State tracking for two-finger touch gestures
+#[derive(Resource, Default)]
+struct TouchState {
+    /// Previous distance between two touches (for pinch zoom)
+    prev_pinch_dist: Option<f32>,
+    /// Previous midpoint of two touches (for two-finger pan)
+    prev_midpoint: Option<Vec2>,
+}
+
+/// Simulation speed multiplier controlled by UI slider
+#[derive(Resource)]
+struct SimSpeed(f32);
+
+impl Default for SimSpeed {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+/// Stores pending tap screen position for raycast shooting
+#[derive(Resource, Default)]
+struct PendingTap(Option<Vec2>);
+
+/// Per-tensor kinetic energy for audio bridge
+#[derive(Resource, Default)]
+struct TensorEnergy([f32; 3]);
 
 /// Runtime simulation statistics for display and monitoring
 #[derive(Resource, Default)]
@@ -421,10 +457,12 @@ fn setup_physics(config: Res<PhysicsConfig>) {
 fn physics_step(
     mut query: Query<(&mut MassPoint, &GridCell)>,
     config: Res<PhysicsConfig>,
+    sim_speed: Res<SimSpeed>,
     mut stats: ResMut<SimStats>,
+    mut tensor_energy: ResMut<TensorEnergy>,
     _time: Res<Time>,
 ) {
-    let dt = config.dt;
+    let dt = config.dt * sim_speed.0;
     let c2 = config.wave_speed.powi(2);
     let coupling = config.inter_coupling;
     let dim = config.dim;
@@ -518,6 +556,7 @@ fn physics_step(
     }
 
     // Integrate equations of motion (Euler method)
+    let mut tensor_ke = [0.0f32; 3];
     for (mut mass_point, cell) in query.iter_mut() {
         if let Some(idx) = grid_map[cell.tensor_id][cell.x][cell.y][cell.z] {
             let accel = accelerations[idx];
@@ -529,10 +568,13 @@ fn physics_step(
 
             let speed = mass_point.velocity.length();
             max_vel = max_vel.max(speed);
-            total_ke += 0.5 * mass_point.mass * speed.powi(2);
+            let ke = 0.5 * mass_point.mass * speed.powi(2);
+            total_ke += ke;
+            tensor_ke[cell.tensor_id] += ke;
         }
     }
 
+    tensor_energy.0 = tensor_ke;
     stats.steps += 1;
     stats.total_ke = total_ke;
     stats.total_pe = total_pe;
@@ -559,7 +601,7 @@ fn pinger_system(
 
         // Rotate through tensors: 0 -> 1 -> 2 -> 0
         let target_tensor = ((time.elapsed_secs() / config.pinger_interval) as usize) % 3;
-        let center = 6;
+        let center = (config.dim / 2) as i32;
 
         // Apply radial impulse from center of target tensor
         for mut mass_point in query.iter_mut() {
@@ -613,6 +655,8 @@ fn camera_controls(
     mut mouse_motion: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut pending_tap: ResMut<PendingTap>,
+    windows: Query<&Window>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
         cam_controller.auto_rotate = !cam_controller.auto_rotate;
@@ -627,6 +671,14 @@ fn camera_controls(
     let mut delta = Vec2::ZERO;
     for motion in mouse_motion.read() {
         delta += motion.delta;
+    }
+
+    // Mouse click without drag = tap to shoot
+    if mouse_buttons.just_released(MouseButton::Left) && delta.length() < 2.0 {
+        let win = windows.single();
+        if let Some(cursor) = win.cursor_position() {
+            pending_tap.0 = Some(cursor);
+        }
     }
 
     // Orbit control (left mouse button)
@@ -663,6 +715,119 @@ fn camera_controls(
     transform.look_at(cam_controller.focus, Vec3::Y);
 }
 
+/// Touch-based camera controls for mobile devices
+///
+/// - One finger drag: orbit camera
+/// - Two finger pinch: zoom in/out
+/// - Two finger drag: pan camera
+/// - Single tap: shoot impulse at nearest particle
+fn touch_camera_controls(
+    touches: Res<Touches>,
+    mut cam: ResMut<CameraController>,
+    mut touch_state: ResMut<TouchState>,
+    mut pending_tap: ResMut<PendingTap>,
+) {
+    // Detect single-finger tap (just released with minimal movement)
+    for t in touches.iter_just_released() {
+        let start = t.start_position();
+        let end = t.position();
+        if start.distance(end) < 10.0 {
+            pending_tap.0 = Some(end);
+        }
+    }
+
+    let active: Vec<_> = touches.iter().collect();
+
+    match active.len() {
+        1 => {
+            // Single finger: orbit
+            let t = active[0];
+            let delta = t.delta();
+            if delta.length() > 0.0 {
+                cam.angle -= delta.x * 0.008;
+                cam.pitch = (cam.pitch - delta.y * 0.008).clamp(-1.5, 1.5);
+                cam.auto_rotate = false;
+            }
+            // Reset two-finger state
+            touch_state.prev_pinch_dist = None;
+            touch_state.prev_midpoint = None;
+        }
+        2 => {
+            let p0 = active[0].position();
+            let p1 = active[1].position();
+            let dist = p0.distance(p1);
+            let mid = (p0 + p1) * 0.5;
+
+            // Pinch zoom
+            if let Some(prev_dist) = touch_state.prev_pinch_dist {
+                let zoom_delta = (dist - prev_dist) * 0.15;
+                cam.radius = (cam.radius - zoom_delta).clamp(10.0, 150.0);
+            }
+
+            // Two-finger pan
+            if let Some(prev_mid) = touch_state.prev_midpoint {
+                let pan_delta = mid - prev_mid;
+                let rot = Quat::from_rotation_y(cam.angle) * Quat::from_rotation_x(cam.pitch);
+                let right = rot * Vec3::X;
+                cam.focus -= right * pan_delta.x * 0.08;
+                cam.focus += Vec3::Y * pan_delta.y * 0.08;
+            }
+
+            touch_state.prev_pinch_dist = Some(dist);
+            touch_state.prev_midpoint = Some(mid);
+            cam.auto_rotate = false;
+        }
+        _ => {
+            touch_state.prev_pinch_dist = None;
+            touch_state.prev_midpoint = None;
+        }
+    }
+}
+
+/// Reads slider values from JS globals and applies them to physics config
+#[allow(unused_variables, unused_mut)]
+fn read_ui_sliders(
+    mut config: ResMut<PhysicsConfig>,
+    mut sim_speed: ResMut<SimSpeed>,
+) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsValue;
+        let window = web_sys::window().unwrap();
+
+        fn read_f64(window: &web_sys::Window, key: &str) -> Option<f64> {
+            js_sys::Reflect::get(window, &JsValue::from_str(key))
+                .ok()
+                .and_then(|v| v.as_f64())
+        }
+
+        // Damping: slider 0 = no decay (1.00), slider 100 = max decay (0.90)
+        if let Some(f) = read_f64(&window, "__chaos_damping") {
+            config.damping = 1.00 - (f as f32 / 100.0) * 0.10;
+        }
+        // Pulse interval: 0..100 → 5.0..0.3 seconds
+        if let Some(f) = read_f64(&window, "__chaos_pulse") {
+            config.pinger_interval = 0.3 + (1.0 - f as f32 / 100.0) * 4.7;
+        }
+        // Sim speed: 0..100 → 0.1..3.0 multiplier
+        if let Some(f) = read_f64(&window, "__chaos_speed") {
+            sim_speed.0 = 0.1 + (f as f32 / 100.0) * 2.9;
+        }
+        // Wave speed: 0..100 → 5..35
+        if let Some(f) = read_f64(&window, "__chaos_wavespd") {
+            config.wave_speed = 5.0 + (f as f32 / 100.0) * 30.0;
+        }
+        // Coupling: 0..100 → 10..300
+        if let Some(f) = read_f64(&window, "__chaos_coupling") {
+            config.inter_coupling = 10.0 + (f as f32 / 100.0) * 290.0;
+        }
+        // Pulse strength: 0..100 → 500..6000
+        if let Some(f) = read_f64(&window, "__chaos_pstr") {
+            config.pinger_strength = 500.0 + (f as f32 / 100.0) * 5500.0;
+        }
+    }
+}
+
 /// Updates on-screen statistics display
 ///
 /// Shows:
@@ -679,22 +844,112 @@ fn update_stats_ui(
     let mut text = query.single_mut();
     let total_e = stats.total_ke + stats.total_pe;
         **text = format!(
-            "🌊 4D Ripple Tank (3x12³ grids)\n\
+            "🌊 4D Ripple Tank (3x{}³)\n\
             Steps: {} | FPS: {:.0}\n\
-            Wave Speed: {:.1} | Damping: {:.3}\n\
-            Energy: {:.1} J (KE: {:.1}, PE: {:.1})\n\
-            Max Velocity: {:.2}\n\
-            \n\
-            Controls:\n\
-            Left Drag: Orbit | Right Drag: Pan\n\
-            Scroll: Zoom | Space: Auto-Rotate",
+            Wave: {:.1} | Damp: {:.3} | Coup: {:.0}\n\
+            E: {:.1} J (KE: {:.1}, PE: {:.1})\n\
+            Vmax: {:.2}",
+            config.dim,
             stats.steps,
             1.0 / time.delta_secs(),
             config.wave_speed,
             config.damping,
+            config.inter_coupling,
             total_e,
             stats.total_ke,
             stats.total_pe,
             stats.max_vel
         );
+}
+
+/// Raycast from screen tap position to find and shoot nearest particle
+fn tap_shoot_system(
+    mut pending_tap: ResMut<PendingTap>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut particles: Query<&mut MassPoint>,
+) {
+    let screen_pos = match pending_tap.0.take() {
+        Some(p) => p,
+        None => return,
+    };
+
+    let (camera, cam_gt) = camera_q.single();
+    let Ok(ray) = camera.viewport_to_world(cam_gt, screen_pos) else {
+        return;
+    };
+
+    // Find nearest particle to ray
+    let mut best_dist = f32::MAX;
+    let mut best_entity = None;
+    let ray_origin = ray.origin;
+    let ray_dir = ray.direction.as_vec3();
+
+    for mass_point in particles.iter() {
+        let to_point = mass_point.position - ray_origin;
+        let t = to_point.dot(ray_dir);
+        if t < 0.0 { continue; } // behind camera
+        let closest = ray_origin + ray_dir * t;
+        let dist = (mass_point.position - closest).length();
+        if dist < best_dist {
+            best_dist = dist;
+            best_entity = Some(mass_point.position);
+        }
+    }
+
+    // If hit is close enough (within ~3 units of ray), apply impulse
+    if best_dist < 3.0 {
+        if let Some(hit_pos) = best_entity {
+            let impulse_dir = (hit_pos - ray_origin).normalize();
+            let impulse = impulse_dir * 2000.0;
+            for mut mp in particles.iter_mut() {
+                let dist = (mp.position - hit_pos).length();
+                if dist < 4.0 {
+                    let falloff = 1.0 - (dist / 4.0);
+                    mp.velocity += impulse * falloff;
+                }
+            }
+            web_log!("🎯 Tap-shoot hit at {:?}, dist={:.2}", hit_pos, best_dist);
+
+            // Trigger shoot sound in JS
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast;
+                let window = web_sys::window().unwrap();
+                if let Ok(func) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("__chaos_shoot_sound")) {
+                    if let Some(f) = func.dyn_ref::<js_sys::Function>() {
+                        let _ = f.call0(&wasm_bindgen::JsValue::NULL);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Writes per-tensor kinetic energy and camera angle to JS for audio engine
+fn audio_bridge_system(
+    particles: Query<&MassPoint>,
+    cam: Res<CameraController>,
+    tensor_energy: Res<TensorEnergy>,
+) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsValue;
+        let window = web_sys::window().unwrap();
+
+        // Write tensor KE array
+        let ke = &tensor_energy.0;
+        let arr = js_sys::Array::new_with_length(3);
+        arr.set(0, JsValue::from_f64(ke[0] as f64));
+        arr.set(1, JsValue::from_f64(ke[1] as f64));
+        arr.set(2, JsValue::from_f64(ke[2] as f64));
+        let _ = js_sys::Reflect::set(&window, &JsValue::from_str("__chaos_tensor_ke"), &arr);
+
+        // Write camera angle
+        let _ = js_sys::Reflect::set(
+            &window,
+            &JsValue::from_str("__chaos_cam_angle"),
+            &JsValue::from_f64(cam.angle as f64),
+        );
+    }
+    let _ = (&particles, &cam, &tensor_energy); // suppress unused warnings on non-wasm
 }

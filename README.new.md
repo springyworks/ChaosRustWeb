@@ -10,7 +10,7 @@ A real-time 4D wave equation simulation in your browser, powered by Bevy 0.15 an
 ## Run Online (GitHub Pages)
 
 - **Just click the GIF above** or open:  
-  https://your-github-username.github.io/ChaosRustWeb/
+  https://springyworks.github.io/ChaosRustWeb/
 - Works in Chrome, Firefox, Edge, and most mobile browsers with WebGL2 support.
 
 ---

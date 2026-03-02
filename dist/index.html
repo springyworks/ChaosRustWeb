@@ -4,76 +4,493 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>ChaosRustWeb - 4D Ripple Tank</title>
-    
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; margin: 0; padding: 0;
+            background-color: #050508; overflow: hidden; touch-action: none;
         }
-        html, body { 
-            width: 100%;
-            height: 100%;
-            margin: 0; 
-            padding: 0;
-            background-color: #050508; 
-            overflow: hidden; 
-            touch-action: none;
+        #app-wrap { display: flex; flex-direction: column; width: 100%; height: 100%; }
+        #bevy { flex: 1 1 auto; width: 100%; min-height: 0; display: block; background-color: #050508; }
+        #controls {
+            flex: 0 0 auto; display: flex; flex-wrap: wrap;
+            gap: 8px 14px; background: rgba(10,10,20,0.92);
+            padding: 6px 10px; z-index: 10;
+            align-items: center; justify-content: center;
+            font-family: monospace; font-size: 11px; color: #aab;
+            pointer-events: auto; touch-action: auto;
         }
-        #bevy { 
-            width: 100%;
-            height: 100%;
-            display: block;
-            background-color: #050508;
+        #controls label { display: flex; flex-direction: column; align-items: center; gap: 1px; white-space: nowrap; }
+        #controls input[type=range] { width: 100px; height: 24px; accent-color: #6af; touch-action: auto; }
+        #controls .val { font-size: 10px; color: #8cf; min-width: 32px; text-align: center; }
+        .ctrl-btn {
+            background: #234; border: 1px solid #6af; border-radius: 6px;
+            color: #6af; font-family: monospace; font-size: 12px;
+            padding: 3px 10px; cursor: pointer; touch-action: manipulation;
+        }
+        .ctrl-btn.on { background: #1a3a1a; border-color: #4f4; color: #4f4; }
+        #controls.audio-off #sl-vol, #controls.audio-off #v-vol,
+        #controls.audio-off .vol-label, #controls.audio-off #sel-mode,
+        #controls.audio-off #chk-repeat, #controls.audio-off .repeat-label { opacity: 0.3; pointer-events: none; }
+        .audio-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        #sel-mode {
+            background: #1a1a2e; color: #8cf; border: 1px solid #6af;
+            border-radius: 4px; font-family: monospace; font-size: 11px;
+            padding: 2px 4px; touch-action: manipulation;
+        }
+        /* Touch-friendly sizing for mobile / high-DPR */
+        @media (pointer: coarse) {
+            #controls {
+                gap: 10px 14px; padding: 8px 10px; font-size: 14px;
+                max-height: 40vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            }
+            #controls input[type=range] { width: 110px; height: 32px; }
+            #controls .val { font-size: 13px; min-width: 40px; }
+            .ctrl-btn { font-size: 15px; padding: 6px 14px; border-radius: 8px; min-height: 40px; }
+            #sel-mode { font-size: 14px; padding: 5px 8px; min-height: 40px; }
+            .audio-group { gap: 4px; }
         }
     </style>
-<link rel="modulepreload" href="/chaos_rust_web-32c0233e360a8cd8.js" crossorigin="anonymous" integrity="sha384-C5hk/eYhBh6eBVE1zuVJybG6r2+zCHulbD+LqniUglu5W1wemi7TlJfoZmsv0zZP"><link rel="preload" href="/chaos_rust_web-32c0233e360a8cd8_bg.wasm" crossorigin="anonymous" integrity="sha384-4T3dPbRql3PrZ/7zVvn2hvm3hMk0T6ov0ejGN3kLwDq9ZDdiP7o1s7QW0TeIeeNj" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/chaos_rust_web-1696ded67b930599.js" crossorigin="anonymous" integrity="sha384-6UWZ6aW+9ZRLXHMqRZ4wTWpLtZClvF7PqmTTT8BE0+hew5wf7iZQECJQGRV91B1q"><link rel="preload" href="/chaos_rust_web-1696ded67b930599_bg.wasm" crossorigin="anonymous" integrity="sha384-NEynoOkrT2QQbjRWobsl5aq93rAEbQ60lO7kvowtq6IxAbFpiXjE8wjSJKB6aCwb" as="fetch" type="application/wasm"></head>
 <body>
-    <canvas id="bevy" oncontextmenu="return false;"></canvas>
+    <div id="app-wrap">
+        <canvas id="bevy" oncontextmenu="return false;"></canvas>
+        <div id="controls" class="audio-off">
+            <label>Damping<input type="range" id="sl-damp" min="0" max="100" value="50"><span class="val" id="v-damp">0.950</span></label>
+            <label>Pulse Rate<input type="range" id="sl-pulse" min="0" max="100" value="50"><span class="val" id="v-pulse">2.0s</span></label>
+            <label>Pulse Str<input type="range" id="sl-pstr" min="0" max="100" value="50"><span class="val" id="v-pstr">3000</span></label>
+            <label>Speed<input type="range" id="sl-speed" min="0" max="100" value="31"><span class="val" id="v-speed">1.0x</span></label>
+            <label>Wave Spd<input type="range" id="sl-wavespd" min="0" max="100" value="50"><span class="val" id="v-wavespd">17</span></label>
+            <label>Coupling<input type="range" id="sl-coupling" min="0" max="100" value="50"><span class="val" id="v-coupling">150</span></label>
+            <button class="ctrl-btn" id="btn-defaults" title="Reset all sliders">⟲ Reset</button>
+            <div class="audio-group">
+                                <button class="ctrl-btn" id="btn-audio">🔇 Audio</button>
+                                <select id="sel-mode">
+                                        <option value="0">1: Harmonic Choir</option>
+                                        <option value="1">2: Spectral Scan</option>
+                                        <option value="2">3: Rhythmic Pulse</option>
+                                        <option value="3">4: Ambient Pad</option>
+                                        <option value="4">5: Granular FM</option>
+                                        <option value="5">6: Random Chain</option>
+                                </select>
+                                <label class="vol-label">Vol<input type="range" id="sl-vol" min="0" max="100" value="60"><span class="val" id="v-vol">60%</span></label>
+                                <label class="repeat-label" style="font-size:12px;display:flex;align-items:center;gap:4px;margin-top:2px;">
+                                    <input type="checkbox" id="chk-repeat" checked style="width:16px;height:16px;"> Repeat
+                                </label>
+            </div>
+        </div>
+    </div>
     <div id="loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#6af;font-family:monospace;font-size:1.2em;">Loading WASM...</div>
-    
     <script>
-        // Pre-flight WebGL2 check using a TEMPORARY canvas (not #bevy)
-        (function() {
-            var testCanvas = document.createElement('canvas');
-            testCanvas.width = 1;
-            testCanvas.height = 1;
-            var gl = testCanvas.getContext('webgl2');
-            var loadEl = document.getElementById('loading');
-            if (!gl) {
-                console.error('[ChaosRust] WebGL2 NOT available on this device!');
-                loadEl.innerHTML = 'ERROR: WebGL2 not supported on this device/browser.<br>Try Chrome or a newer browser.';
-                loadEl.style.color = '#f44';
-            } else {
-                var dbg = gl.getExtension('WEBGL_debug_renderer_info');
-                var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
-                var vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown';
-                console.log('[ChaosRust] WebGL2 OK - Renderer:', renderer, '- Vendor:', vendor);
-                console.log('[ChaosRust] Max texture size:', gl.getParameter(gl.MAX_TEXTURE_SIZE));
-                console.log('[ChaosRust] Max vertex attribs:', gl.getParameter(gl.MAX_VERTEX_ATTRIBS));
-                // Destroy test context and canvas
-                var ext = gl.getExtension('WEBGL_lose_context');
-                if (ext) ext.loseContext();
-                testCanvas = null;
-            }
-        })();
+    // --- WebGL2 pre-flight ---
+    (function(){
+        var c=document.createElement('canvas'); c.width=1; c.height=1;
+        var gl=c.getContext('webgl2'), el=document.getElementById('loading');
+        if(!gl){el.innerHTML='ERROR: WebGL2 not supported.';el.style.color='#f44';return;}
+        var d=gl.getExtension('WEBGL_debug_renderer_info');
+        console.log('[ChaosRust] WebGL2 OK -',d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):'?');
+        var e=gl.getExtension('WEBGL_lose_context'); if(e) e.loseContext();
+    })();
+    document.addEventListener('contextmenu',function(e){e.preventDefault();});
 
-        // Prevent default context menu
-        document.addEventListener('contextmenu', event => event.preventDefault());
-        // Hide loading indicator once WASM starts rendering
-        const observer = new MutationObserver(() => {
-            const el = document.getElementById('loading');
-            if (el) el.remove();
-            observer.disconnect();
-        });
-        observer.observe(document.getElementById('bevy'), { attributes: true });
-        // Fallback: hide after 15s regardless
-        setTimeout(() => { const el = document.getElementById('loading'); if (el) el.remove(); }, 15000);
+    // --- Constrain canvas for high-DPR devices (prevent exceeding GPU max texture 4096) ---
+    (function(){
+        var dpr=window.devicePixelRatio||1;
+        if(dpr>1){
+            var maxCSS=Math.floor(4000/dpr);
+            var cv=document.getElementById('bevy');
+            cv.style.maxWidth=maxCSS+'px';
+            cv.style.maxHeight=maxCSS+'px';
+            console.log('[ChaosRust] Canvas CSS cap: '+maxCSS+'px (DPR '+dpr+')');
+        }
+    })();
+
+    // === Default slider values ===
+    var DEFAULTS = {damp:50, pulse:50, pstr:50, speed:31, wavespd:50, coupling:50, vol:60};
+
+    // --- Globals for WASM ---
+    window.__chaos_damping=DEFAULTS.damp; window.__chaos_pulse=DEFAULTS.pulse;
+    window.__chaos_pstr=DEFAULTS.pstr; window.__chaos_speed=DEFAULTS.speed;
+    window.__chaos_wavespd=DEFAULTS.wavespd; window.__chaos_coupling=DEFAULTS.coupling;
+    window.__chaos_audio_on=0; window.__chaos_volume=DEFAULTS.vol;
+    // Repeat checkbox: when ON, transform ticks continuously; when OFF, single snapshot then fade
+    var chkRepeat = document.getElementById('chk-repeat');
+    window.__chaos_repeat = 1; // default: repeat ON (continuous)
+    chkRepeat.checked = true;
+    chkRepeat.addEventListener('change', function(){
+        window.__chaos_repeat = chkRepeat.checked ? 1 : 0;
+        // When switching to single-shot, do one final tick then fade out
+        if(!chkRepeat.checked && audioCtx && activeTick){
+            try{
+                var ke=window.__chaos_tensor_ke||[0,0,0];
+                var cam=window.__chaos_cam_angle||0;
+                activeTick(ke,cam);
+            }catch(e){}
+            // Fade master to near-zero over 2 seconds
+            masterGain.gain.setTargetAtTime(0.001, audioCtx.currentTime, 0.5);
+        }
+        // When switching back to repeat, restore volume
+        if(chkRepeat.checked && audioCtx && masterGain){
+            masterGain.gain.setTargetAtTime(window.__chaos_volume/100, audioCtx.currentTime, 0.1);
+        }
+    });
+
+    function updateSliders(){
+        var d=+document.getElementById('sl-damp').value;
+        var p=+document.getElementById('sl-pulse').value;
+        var ps=+document.getElementById('sl-pstr').value;
+        var s=+document.getElementById('sl-speed').value;
+        var ws=+document.getElementById('sl-wavespd').value;
+        var cp=+document.getElementById('sl-coupling').value;
+        var vol=+document.getElementById('sl-vol').value;
+        window.__chaos_damping=d; window.__chaos_pulse=p; window.__chaos_pstr=ps;
+        window.__chaos_speed=s; window.__chaos_wavespd=ws; window.__chaos_coupling=cp;
+        window.__chaos_volume=vol;
+        document.getElementById('v-damp').textContent=(0.90+d/100*0.10).toFixed(3);
+        document.getElementById('v-pulse').textContent=(0.3+(1-p/100)*4.7).toFixed(1)+'s';
+        document.getElementById('v-pstr').textContent=(500+ps/100*5500).toFixed(0);
+        document.getElementById('v-speed').textContent=(0.1+s/100*2.9).toFixed(1)+'x';
+        document.getElementById('v-wavespd').textContent=(5+ws/100*30).toFixed(0);
+        document.getElementById('v-coupling').textContent=(10+cp/100*290).toFixed(0);
+        document.getElementById('v-vol').textContent=vol+'%';
+    }
+    ['sl-damp','sl-pulse','sl-pstr','sl-speed','sl-wavespd','sl-coupling','sl-vol'].forEach(function(id){
+        document.getElementById(id).addEventListener('input',updateSliders);
+    });
+
+    // --- Defaults button ---
+    document.getElementById('btn-defaults').addEventListener('click',function(){
+        document.getElementById('sl-damp').value=DEFAULTS.damp;
+        document.getElementById('sl-pulse').value=DEFAULTS.pulse;
+        document.getElementById('sl-pstr').value=DEFAULTS.pstr;
+        document.getElementById('sl-speed').value=DEFAULTS.speed;
+        document.getElementById('sl-wavespd').value=DEFAULTS.wavespd;
+        document.getElementById('sl-coupling').value=DEFAULTS.coupling;
+        document.getElementById('sl-vol').value=DEFAULTS.vol;
+        updateSliders();
+    });
+
+    // --- Audio on/off ---
+    var btnA=document.getElementById('btn-audio');
+    btnA.addEventListener('click',function(){
+        window.__chaos_audio_on=window.__chaos_audio_on?0:1;
+        if(window.__chaos_audio_on){
+            btnA.textContent='🔊 Audio'; btnA.classList.add('on');
+            document.getElementById('controls').classList.remove('audio-off');
+            initAudio();
+        } else {
+            btnA.textContent='🔇 Audio'; btnA.classList.remove('on');
+            document.getElementById('controls').classList.add('audio-off');
+            stopAudio();
+        }
+    });
+    document.getElementById('sel-mode').addEventListener('change',function(){
+        if(audioCtx){stopAudio();initAudio();}
+    });
+
+    // Touch isolation
+    var ce=document.getElementById('controls');
+    ce.addEventListener('touchstart',function(e){e.stopPropagation();},{passive:false});
+    ce.addEventListener('touchmove',function(e){e.stopPropagation();},{passive:false});
+
+    // =========================================================================
+    // AUDIO ENGINE — 6 transform modes
+    // =========================================================================
+    var audioCtx=null, masterGain=null, audioNodes=[];
+    var curMode=-1;
+
+    function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+    function getPan(i,camAngle){
+        var ta=(i-1)*1.05, ra=ta-camAngle;
+        return clamp(Math.sin(ra),-1,1);
+    }
+
+    // --- Mode builders: each returns {nodes:[], tick:function(ke,cam)} ---
+
+    // Mode 0: Harmonic Choir — rich harmonic series, vowel-like filters
+    function buildHarmonicChoir(){
+        var panVals=[-0.8,0,0.8];
+        var harmonics=[[110,220,330,440],[165,330,495],[220,440,660]];
+        var oscs=[],gains=[],pans=[],filters=[];
+        for(var i=0;i<3;i++){
+            var chGain=audioCtx.createGain(); chGain.gain.value=0;
+            var pan=audioCtx.createStereoPanner(); pan.pan.value=panVals[i];
+            var filt=audioCtx.createBiquadFilter();
+            filt.type='bandpass'; filt.frequency.value=400+i*200; filt.Q.value=3;
+            var chOscs=[];
+            for(var h=0;h<harmonics[i].length;h++){
+                var o=audioCtx.createOscillator();
+                o.type=h%2===0?'sine':'triangle';
+                o.frequency.value=harmonics[i][h];
+                var hg=audioCtx.createGain(); hg.gain.value=0.15/(h+1);
+                o.connect(hg); hg.connect(filt);
+                o.start(); chOscs.push(o); audioNodes.push(o);
+            }
+            filt.connect(chGain); chGain.connect(pan); pan.connect(masterGain);
+            oscs.push(chOscs); gains.push(chGain); pans.push(pan); filters.push(filt);
+        }
+        return {tick:function(ke,cam){
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0, vol=clamp(e*0.0004,0,0.2);
+                gains[i].gain.setTargetAtTime(vol,audioCtx.currentTime,0.06);
+                filters[i].frequency.setTargetAtTime(300+e*0.15,audioCtx.currentTime,0.1);
+                pans[i].pan.setTargetAtTime(getPan(i,cam),audioCtx.currentTime,0.05);
+                for(var h=0;h<oscs[i].length;h++){
+                    var base=oscs[i][h].frequency.value;
+                    var drift=1+clamp(e*0.00005,-0.3,0.5);
+                    oscs[i][h].frequency.setTargetAtTime(base*drift,audioCtx.currentTime,0.2);
+                }
+            }
+        }};
+    }
+
+    // Mode 1: Spectral Scan — energy maps to frequency sweep, like reading a spectrogram
+    function buildSpectralScan(){
+        var oscs=[],gains=[],pans=[];
+        var baseF=[80,200,500];
+        for(var i=0;i<3;i++){
+            var o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.value=baseF[i];
+            var f=audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=baseF[i]; f.Q.value=8;
+            var g=audioCtx.createGain(); g.gain.value=0;
+            var p=audioCtx.createStereoPanner(); p.pan.value=(i-1)*0.8;
+            o.connect(f); f.connect(g); g.connect(p); p.connect(masterGain);
+            o.start(); audioNodes.push(o);
+            oscs.push(o); gains.push(g); pans.push(p);
+            // store filter on osc ref for tick access
+            o._filt=f;
+        }
+        return {tick:function(ke,cam){
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0;
+                var sweep=80+clamp(e*0.2,0,4000); // energy→frequency
+                oscs[i]._filt.frequency.setTargetAtTime(sweep,audioCtx.currentTime,0.03);
+                gains[i].gain.setTargetAtTime(clamp(e*0.0002,0,0.18),audioCtx.currentTime,0.04);
+                pans[i].pan.setTargetAtTime(getPan(i,cam),audioCtx.currentTime,0.05);
+            }
+        }};
+    }
+
+    // Mode 2: Rhythmic Pulse — energy triggers rhythmic clicks and tonal bursts
+    function buildRhythmicPulse(){
+        var lastPulse=[0,0,0], pans=[], gains=[];
+        for(var i=0;i<3;i++){
+            var g=audioCtx.createGain(); g.gain.value=0;
+            var p=audioCtx.createStereoPanner(); p.pan.value=(i-1)*0.8;
+            g.connect(p); p.connect(masterGain);
+            gains.push(g); pans.push(p);
+        }
+        // Persistent low drone
+        var drone=audioCtx.createOscillator(); drone.type='sine'; drone.frequency.value=55;
+        var dg=audioCtx.createGain(); dg.gain.value=0.06;
+        drone.connect(dg); dg.connect(masterGain); drone.start(); audioNodes.push(drone);
+        return {tick:function(ke,cam){
+            var now=audioCtx.currentTime;
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0;
+                pans[i].pan.setTargetAtTime(getPan(i,cam),now,0.05);
+                // Trigger pulse when energy crosses threshold, with cooldown
+                var interval=clamp(0.8-e*0.0002,0.1,0.8);
+                if(e>50 && now-lastPulse[i]>interval){
+                    lastPulse[i]=now;
+                    var o=audioCtx.createOscillator();
+                    o.type=['sine','triangle','square'][i];
+                    var freq=110*(i+1)*(1+clamp(e*0.0001,0,1));
+                    o.frequency.value=freq;
+                    o.frequency.setTargetAtTime(freq*0.5,now+0.1,0.05);
+                    var eg=audioCtx.createGain();
+                    eg.gain.value=clamp(e*0.0003,0.05,0.25);
+                    eg.gain.setTargetAtTime(0.001,now+0.15,0.04);
+                    o.connect(eg); eg.connect(pans[i]); pans[i].connect(masterGain);
+                    o.start(); o.stop(now+0.2);
+                }
+            }
+        }};
+    }
+
+    // Mode 3: Ambient Pad — lush reverb-like washes, slow evolving
+    function buildAmbientPad(){
+        var oscs=[],gains=[],pans=[],delays=[];
+        var notes=[65.41,82.41,98.00]; // C2,E2,G2 — major triad
+        for(var i=0;i<3;i++){
+            var o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=notes[i];
+            var o2=audioCtx.createOscillator(); o2.type='sine'; o2.frequency.value=notes[i]*2.01; // slight detune
+            var g=audioCtx.createGain(); g.gain.value=0;
+            var p=audioCtx.createStereoPanner(); p.pan.value=(i-1)*0.7;
+            var dly=audioCtx.createDelay(1.0); dly.delayTime.value=0.3+i*0.15;
+            var fb=audioCtx.createGain(); fb.gain.value=0.35;
+            o.connect(g); o2.connect(g);
+            g.connect(p); g.connect(dly); dly.connect(fb); fb.connect(dly); dly.connect(p);
+            p.connect(masterGain);
+            o.start(); o2.start(); audioNodes.push(o); audioNodes.push(o2);
+            oscs.push([o,o2]); gains.push(g); pans.push(p); delays.push(dly);
+        }
+        return {tick:function(ke,cam){
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0;
+                gains[i].gain.setTargetAtTime(clamp(e*0.0002,0,0.12),audioCtx.currentTime,0.2);
+                // Slow pitch drift based on energy
+                var drift=1+clamp(Math.sin(audioCtx.currentTime*0.3+i)*e*0.00003,-0.05,0.05);
+                oscs[i][0].frequency.setTargetAtTime(notes[i]*drift,audioCtx.currentTime,0.3);
+                oscs[i][1].frequency.setTargetAtTime(notes[i]*2.01*drift,audioCtx.currentTime,0.3);
+                pans[i].pan.setTargetAtTime(getPan(i,cam),audioCtx.currentTime,0.1);
+            }
+        }};
+    }
+
+    // Mode 4: Granular FM — FM synthesis with energy-driven modulation index
+    function buildGranularFM(){
+        var carriers=[],mods=[],gains=[],pans=[];
+        var cFreqs=[220,330,440];
+        for(var i=0;i<3;i++){
+            var mod=audioCtx.createOscillator(); mod.type='sine';
+            mod.frequency.value=cFreqs[i]*1.5; // mod ratio 3:2
+            var modGain=audioCtx.createGain(); modGain.gain.value=0; // FM depth
+            var car=audioCtx.createOscillator(); car.type='sine';
+            car.frequency.value=cFreqs[i];
+            mod.connect(modGain); modGain.connect(car.frequency);
+            var g=audioCtx.createGain(); g.gain.value=0;
+            var p=audioCtx.createStereoPanner(); p.pan.value=(i-1)*0.8;
+            car.connect(g); g.connect(p); p.connect(masterGain);
+            mod.start(); car.start(); audioNodes.push(mod); audioNodes.push(car);
+            carriers.push(car); mods.push({osc:mod,gain:modGain}); gains.push(g); pans.push(p);
+        }
+        return {tick:function(ke,cam){
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0;
+                gains[i].gain.setTargetAtTime(clamp(e*0.0003,0,0.2),audioCtx.currentTime,0.05);
+                // FM modulation depth driven by energy
+                mods[i].gain.gain.setTargetAtTime(clamp(e*0.3,0,2000),audioCtx.currentTime,0.05);
+                // Carrier frequency drifts
+                var cf=cFreqs[i]*(1+clamp(e*0.00008,0,1));
+                carriers[i].frequency.setTargetAtTime(cf,audioCtx.currentTime,0.1);
+                mods[i].osc.frequency.setTargetAtTime(cf*1.5,audioCtx.currentTime,0.1);
+                pans[i].pan.setTargetAtTime(getPan(i,cam),audioCtx.currentTime,0.05);
+            }
+        }};
+    }
+
+    // Mode 5: Random Chain — randomly wired elementary transforms
+    function buildRandomChain(){
+        var types=['sine','sawtooth','triangle','square'];
+        var filterTypes=['lowpass','highpass','bandpass','notch'];
+        var chains=[];
+        for(var i=0;i<3;i++){
+            // Random number of stages: 2-4
+            var nStages=2+Math.floor(Math.random()*3);
+            var nodes=[], firstNode=null, lastNode=null;
+            for(var s=0;s<nStages;s++){
+                var kind=Math.random();
+                if(kind<0.4){
+                    // Oscillator
+                    var o=audioCtx.createOscillator();
+                    o.type=types[Math.floor(Math.random()*4)];
+                    o.frequency.value=50+Math.random()*400;
+                    if(lastNode) lastNode.connect(o.frequency); // FM!
+                    var og=audioCtx.createGain(); og.gain.value=0.15;
+                    o.connect(og); o.start(); audioNodes.push(o);
+                    if(!firstNode) firstNode=og;
+                    lastNode=og; nodes.push({type:'osc',osc:o,gain:og});
+                } else if(kind<0.7){
+                    // Filter
+                    var f=audioCtx.createBiquadFilter();
+                    f.type=filterTypes[Math.floor(Math.random()*4)];
+                    f.frequency.value=200+Math.random()*2000;
+                    f.Q.value=1+Math.random()*8;
+                    if(lastNode) lastNode.connect(f);
+                    if(!firstNode) firstNode=f;
+                    lastNode=f; nodes.push({type:'filter',filt:f});
+                } else {
+                    // Delay + feedback
+                    var d=audioCtx.createDelay(1.0);
+                    d.delayTime.value=0.05+Math.random()*0.3;
+                    var fb=audioCtx.createGain(); fb.gain.value=0.2+Math.random()*0.3;
+                    if(lastNode) lastNode.connect(d);
+                    d.connect(fb); fb.connect(d);
+                    if(!firstNode) firstNode=d;
+                    lastNode=d; nodes.push({type:'delay',delay:d,fb:fb});
+                }
+            }
+            var g=audioCtx.createGain(); g.gain.value=0;
+            var p=audioCtx.createStereoPanner(); p.pan.value=(i-1)*0.8;
+            if(lastNode) lastNode.connect(g);
+            g.connect(p); p.connect(masterGain);
+            chains.push({nodes:nodes,gain:g,pan:p,firstNode:firstNode});
+        }
+        return {tick:function(ke,cam){
+            for(var i=0;i<3;i++){
+                var e=ke[i]||0;
+                chains[i].gain.gain.setTargetAtTime(clamp(e*0.00025,0,0.15),audioCtx.currentTime,0.06);
+                chains[i].pan.pan.setTargetAtTime(getPan(i,cam),audioCtx.currentTime,0.05);
+                // Tweak random params based on energy
+                chains[i].nodes.forEach(function(n){
+                    if(n.type==='osc') n.osc.frequency.setTargetAtTime(
+                        n.osc.frequency.value*(1+clamp(e*0.00003-0.01,-0.1,0.1)),audioCtx.currentTime,0.15);
+                    if(n.type==='filter') n.filt.frequency.setTargetAtTime(
+                        200+clamp(e*0.5,0,3000),audioCtx.currentTime,0.1);
+                });
+            }
+        }};
+    }
+
+    var builders=[buildHarmonicChoir,buildSpectralScan,buildRhythmicPulse,
+                  buildAmbientPad,buildGranularFM,buildRandomChain];
+    var activeTick=null;
+
+    function initAudio(){
+        if(audioCtx) return;
+        audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+        masterGain=audioCtx.createGain();
+        masterGain.gain.value=window.__chaos_volume/100;
+        masterGain.connect(audioCtx.destination);
+        curMode=+document.getElementById('sel-mode').value;
+        var mode=builders[curMode]();
+        activeTick=mode.tick;
+        // Tap-shoot sound — always one-shot, never repeats
+        window.__chaos_shoot_sound=function(){
+            if(!audioCtx||!window.__chaos_audio_on) return;
+            var o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=880;
+            o.frequency.exponentialRampToValueAtTime(220,audioCtx.currentTime+0.3);
+            var eg=audioCtx.createGain(); eg.gain.value=0.3;
+            eg.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.4);
+            o.connect(eg); eg.connect(masterGain); o.start(); o.stop(audioCtx.currentTime+0.45);
+        };
+        console.log('[ChaosRust] Audio mode',curMode,'started');
+    }
+
+    function stopAudio(){
+        if(!audioCtx) return;
+        audioNodes.forEach(function(n){try{n.stop();}catch(e){}});
+        audioNodes=[]; activeTick=null;
+        audioCtx.close(); audioCtx=null; masterGain=null;
+    }
+
+    function audioTick(){
+        if(audioCtx&&window.__chaos_audio_on&&activeTick){
+            if(window.__chaos_repeat){
+                // Continuous mode: update volume and tick every frame
+                masterGain.gain.value=window.__chaos_volume/100;
+                var ke=window.__chaos_tensor_ke||[0,0,0];
+                var cam=window.__chaos_cam_angle||0;
+                try{activeTick(ke,cam);}catch(e){}
+            }
+            // When repeat is OFF, transform has already done one tick + fade (via checkbox handler)
+            // No continuous ticking — the sound decays naturally
+        }
+        requestAnimationFrame(audioTick);
+    }
+    requestAnimationFrame(audioTick);
+
+    // Hide loading
+    var obs=new MutationObserver(function(){
+        var el=document.getElementById('loading'); if(el) el.remove(); obs.disconnect();
+    });
+    obs.observe(document.getElementById('bevy'),{attributes:true});
+    setTimeout(function(){var el=document.getElementById('loading');if(el)el.remove();},15000);
     </script>
 
 <script type="module">
-import init, * as bindings from '/chaos_rust_web-32c0233e360a8cd8.js';
-const wasm = await init({ module_or_path: '/chaos_rust_web-32c0233e360a8cd8_bg.wasm' });
+import init, * as bindings from '/chaos_rust_web-1696ded67b930599.js';
+const wasm = await init({ module_or_path: '/chaos_rust_web-1696ded67b930599_bg.wasm' });
 
 
 window.wasmBindings = bindings;
